@@ -26,7 +26,7 @@ def tokenize_function(article):
     return tokenizer(article, return_special_tokens_mask=True)
 
 #tokenized_dataset = [tokenize_function(example["text"]) for example in wiki]
-
+#
 
 tokenized_dataset = wiki.map(
     tokenize_function,
