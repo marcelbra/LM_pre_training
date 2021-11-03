@@ -16,7 +16,7 @@ wiki = load_from_disk("/home/marcelbraasch/PycharmProjects/LM_pre_training/Wikip
 
 # Create tokenizer (TODO: Train from scratch using corpus)
 tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
-
+#
 
 # Preprocess data
 column_names = ["title", "text"]
