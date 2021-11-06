@@ -2,20 +2,91 @@
 BERT pre-training set up
 """
 
-from datasets import load_dataset, load_from_disk
+from datasets import load_dataset, load_from_disk#, save_to_disk
 from tokenizers import trainers, Tokenizer, normalizers, ByteLevelBPETokenizer
 from transformers import RobertaTokenizer, RobertaConfig, RobertaModel
+from nltk.tokenize import sent_tokenize
+import pickle
+from tqdm import tqdm
+import json
 
 # Variables
-max_seq_length = 128
+max_seq_length = 512
 
-# Load data sets
-#book_corpus = load_dataset("bookcorpus").save_to_disk("./Data")
-#wiki_corpus = load_dataset("wikipedia", "20200501.en")
-wiki = load_from_disk("/home/marcelbraasch/PycharmProjects/LM_pre_training/Wikipedia/raw")
+# Read 10k wiki documents
+corpus = None
+with open('Wikipedia/processed_10k.pkl', 'rb') as f:
+    corpus = pickle.load(f)
 
-# Create tokenizer (TODO: Train from scratch using corpus)
+vocab = None
+with open('vocab.json') as f:
+    vocab = json.load(f)
+    vocab = dict(zip(vocab.values(), vocab.keys()))
+
+
+    """
+    _sum, c = 0, 0
+    for x in document["tokenized"]:
+        s = len(x["input_ids"])
+        if _sum + s >= 512: break
+        _sum += s
+        c += 1
+    p = document["tokenized"][:c]
+
+    sents_amount = len(document["sentences"])
+    counter = 0
+    sents, toks, specials = [], [], []
+    for i in range(sents_amount):
+        tok = document["tokenized"][i]
+        tok_amount = len(tok)
+        #counter +=
+
+        sent = document["sentences"][i]
+        #doc = {:}
+        #doc.append()
+
+    #return [lst[i:i + n] for i in range(0, len(lst), n)]
+    """
+
+def chunks(document, n=512):
+    """Chunks a document into x parts of maximal size n."""
+
+    # If document tokens is < n just return it
+    amount_tokens = sum([len(x["input_ids"]) for x in document["tokenized"]])
+    if amount_tokens <= 512: return document
+
+    # Find out the thresholds for slicing into chunks of size max. n
+    _sum, indices = 0, [0]
+    for i, x in enumerate(document["tokenized"]):
+        amount_tokens = len(x["input_ids"])
+        if _sum + amount_tokens >= n:
+            indices.append(i)
+            _sum = 0
+        _sum += amount_tokens
+
+
+    for i in range(len(indices) - 1):
+        new_doc = dict()
+        start, end = indices[i], indices[i + 1]
+        new_doc = {"sentences": document["sentences"][start:end],
+                   "tokenized": document["tokenized"][start:end]}
+
+
+    s = 0
+
 tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
+corpus = corpus[:100]
+samples = []
+for document in corpus:
+    length = sum([len(x["input_ids"]) for x in document["tokenized"]])
+    document = chunks(document)
+    s = 0
+
+
+
+s = 0
+
+"""
 
 # Preprocess data
 column_names = ["title", "text"]
@@ -51,3 +122,4 @@ config.update(tiny)
 # Create model
 #model = RobertaModel(config)
 
+"""
