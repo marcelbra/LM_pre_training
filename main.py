@@ -23,68 +23,55 @@ with open('vocab.json') as f:
     vocab = json.load(f)
     vocab = dict(zip(vocab.values(), vocab.keys()))
 
+def reformat(document):
+    """Transform ([sentences], [tokens]) into [sentence, tokens]."""
+    sentences, tokens = document["sentences"], document["tokenized"]
+    new_doc = []
+    for i in range(len(sentences)):
+        new_doc.append({"sentence": sentences[i],
+                        "tokens": tokens[i],
+                        "length": len(tokens[i]["input_ids"])
+                        })
+    return new_doc
 
-    """
-    _sum, c = 0, 0
-    for x in document["tokenized"]:
-        s = len(x["input_ids"])
-        if _sum + s >= 512: break
-        _sum += s
-        c += 1
-    p = document["tokenized"][:c]
+def doc_sentences(document, n=512):
+    """Splits a given document into chunks of maximally token size n."""
+    counter, new_docs ,new_doc = 0, [], []
+    for example in document:
+        length = example["length"]
+        if counter + length <= n:
+            new_doc.append(example)
+            counter += length
+        else:
+            new_docs.append(new_doc)
+            new_doc, counter = [], length
+    new_docs.append(new_doc)
+    return new_docs
 
-    sents_amount = len(document["sentences"])
-    counter = 0
-    sents, toks, specials = [], [], []
-    for i in range(sents_amount):
-        tok = document["tokenized"][i]
-        tok_amount = len(tok)
-        #counter +=
+def write_doc_sentences(samples):
+    with open("formated.txt", "w", encoding="utf-8") as f:
+        s = ""
+        for sample in samples:
+            for doc in sample:
+                for element in doc:
+                    s += element["sentence"] + "\n"
+                s += "\n"
+            s += "\n"
+        f.write(s)
 
-        sent = document["sentences"][i]
-        #doc = {:}
-        #doc.append()
-
-    #return [lst[i:i + n] for i in range(0, len(lst), n)]
-    """
-
-def chunks(document, n=512):
-    """Chunks a document into x parts of maximal size n."""
-
-    # If document tokens is < n just return it
-    amount_tokens = sum([len(x["input_ids"]) for x in document["tokenized"]])
-    if amount_tokens <= 512: return document
-
-    # Find out the thresholds for slicing into chunks of size max. n
-    _sum, indices = 0, [0]
-    for i, x in enumerate(document["tokenized"]):
-        amount_tokens = len(x["input_ids"])
-        if _sum + amount_tokens >= n:
-            indices.append(i)
-            _sum = 0
-        _sum += amount_tokens
-
-
-    for i in range(len(indices) - 1):
-        new_doc = dict()
-        start, end = indices[i], indices[i + 1]
-        new_doc = {"sentences": document["sentences"][start:end],
-                   "tokenized": document["tokenized"][start:end]}
-
-
-    s = 0
-
-tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
-corpus = corpus[:100]
-samples = []
-for document in corpus:
-    length = sum([len(x["input_ids"]) for x in document["tokenized"]])
-    document = chunks(document)
-    s = 0
+def main():
+    tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
+    corpus = corpus[:100]
+    samples = []
+    for document in corpus:
+        document = reformat(document)
+        # Apply doc_sentences strategy
+        document = doc_sentences(document)
+        samples.append(document)
+    write_doc_sentences(samples)
 
 
 
-s = 0
 
 """
 
