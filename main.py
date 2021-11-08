@@ -1,15 +1,68 @@
 """
 BERT pre-training set up
 """
-
+import numpy as np
 from datasets import load_dataset, load_from_disk#, save_to_disk
 from tokenizers import trainers, Tokenizer, normalizers, ByteLevelBPETokenizer
-from transformers import RobertaTokenizer, RobertaConfig, RobertaModel
+from transformers import (
+    RobertaTokenizer,
+    RobertaConfig,
+    RobertaModel,
+    PreTrainedTokenizerBase,
+    FlaxAutoModelForMaskedLM
+)
 from nltk.tokenize import sent_tokenize
 import pickle
 from tqdm import tqdm
 import json
+from preprocess import get_data
+from dataclasses import dataclass, field
+import flax
+import jax
+from typing import Dict, List, Optional, Tuple
+from masking import FlaxDataCollatorForLanguageModeling
+import jax.numpy as jnp
+import optax
 
+# Constants
+mlm_probability = 0.15
+seed = 42
+dtype = "float32"
+num_epochs = 10
+train_batch_size = 128
+eval_batch_size = 128
+warmup_steps = 1000
+learning_rate = "5e-3"
+dataset_amount = 10000
+num_train_steps = dataset_amount // train_batch_size * num_epochs
+
+# Initialize tokenizer and data collator
+tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
+data_collator = FlaxDataCollatorForLanguageModeling(tokenizer=tokenizer, mlm_probability=mlm_probability)
+
+# Initialize training
+rng = jax.random.PRNGKey(training_args.seed)
+dropout_rngs = jax.random.split(rng, jax.local_device_count())
+
+# Initialize model
+config = RobertaConfig.from_pretrained("roberta-base", vocab_size=50265)
+tiny = {"num_hidden_layers" : 2, "hidden_size" : 256,}
+config.update(tiny)
+model = FlaxAutoModelForMaskedLM.from_config(config, seed=seed, dtype=getattr(jnp, dtype))
+
+# Create learning rate schedule
+warmup_fn = optax.linear_schedule(init_value=0.0, end_value=learning_rate, transition_steps=warmup_steps)
+decay_fn = optax.linear_schedule(init_value=learning_rate, end_value=0, transition_steps=num_train_steps - warmup_steps)
+linear_decay_lr_schedule_fn = optax.join_schedules(schedules=[warmup_fn, decay_fn], boundaries=[warmup_steps])
+
+# Store some constant
+
+
+
+
+s = 0
+
+"""
 # Variables
 max_seq_length = 512
 
@@ -24,7 +77,7 @@ with open('vocab.json') as f:
     vocab = dict(zip(vocab.values(), vocab.keys()))
 
 def reformat(document):
-    """Transform ([sentences], [tokens]) into [sentence, tokens]."""
+    #Transform ([sentences], [tokens]) into [sentence, tokens].
     sentences, tokens = document["sentences"], document["tokenized"]
     new_doc = []
     for i in range(len(sentences)):
@@ -35,13 +88,15 @@ def reformat(document):
     return new_doc
 
 def doc_sentences(document, n=512):
-    """Splits a given document into chunks of maximally token size n."""
+    #Splits a given document into chunks of maximally token size n.
     counter, new_docs ,new_doc = 0, [], []
     for example in document:
         length = example["length"]
+        # If maximum length will not be reached append the sentence
         if counter + length <= n:
             new_doc.append(example)
             counter += length
+        # Else finish the document and reset
         else:
             new_docs.append(new_doc)
             new_doc, counter = [], length
@@ -59,21 +114,18 @@ def write_doc_sentences(samples):
             s += "\n"
         f.write(s)
 
-def main():
-    tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
-    corpus = corpus[:100]
-    samples = []
-    for document in corpus:
-        document = reformat(document)
-        # Apply doc_sentences strategy
-        document = doc_sentences(document)
-        samples.append(document)
-    write_doc_sentences(samples)
+tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
+corpus = corpus[:100]
+samples = []
+for document in corpus:
+    document = reformat(document)
+    # Apply doc_sentences strategy
+    document = doc_sentences(document)
+    samples.append(document)
+write_doc_sentences(samples)
 
 
 
-
-"""
 
 # Preprocess data
 column_names = ["title", "text"]

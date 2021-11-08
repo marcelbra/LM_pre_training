@@ -1,49 +1,38 @@
 import pickle
-from datasets import load_from_disk
+from datasets import load_from_disk, Dataset
 from transformers import RobertaTokenizer
 from tqdm import tqdm
 from nltk.tokenize import sent_tokenize
+from datasets.arrow_dataset import Batch
+from utils import _filter, _clean
 
-wiki = load_from_disk("/home/marcelbraasch/PycharmProjects/LM_pre_training/Wikipedia/raw")["train"]
-new_dataset = []
-tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
 
-# Go over each article and filter
-for example in tqdm(wiki):
+def get_data(dataset):
 
-    sentences = [x for x in example["text"].split("\n")]#_filter(x)]
-    new_sentences = {"sentences": [],
-                     "tokenized": []}
-    break_words = ["References", "Category", "Links"]
-    skip_words = ["List of", "Category"]
+    wiki = load_from_disk("/home/marcelbraasch/PycharmProjects/LM_pre_training/Wikipedia/raw")["train"]
+    tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
+    wiki = Dataset.from_dict(wiki[:10])  # Only for testing
 
-    for sentence in sentences:
+    data = []
 
-        # We have reached end of document
-        if "References" in sentence: break
-        # Filter lists, links, categories, headings
-        if len(sentence.split(" ")) <= 5: continue
-        if sentence.startswith("Links"): continue
-        if sentence.startswith("Category"): continue
-        if sentence.startswith("List of"): continue
+    for example in dataset["text"]:
 
-        # Split sentences and append
-        sentences = sent_tokenize(sentence)
-        for sentence in sentences:
-            tokenized = tokenizer(sentence,
-                                  return_special_tokens_mask=True,
-                                  return_attention_mask=False,
-                                  return_length=True
-                                  )
-            new_sentences["sentences"].append(sentence)
-            new_sentences["tokenized"].append(tokenized)
-            s = 0
+        # Do sentence splitting and cleaning
+        sentences = [x for x in example.split("\n") if _filter(x)]
+        sentences = list(map(sent_tokenize,sentences))
+        sentences = [item for sentence in sentences for item in sentence]  # Flatten
+        sentences = [_clean(x) for x in sentences]
 
-    new_dataset.append(new_sentences)
+        # Tokenize each sentence, extract and structure important information
+        tokenized = [tokenizer(x, return_special_tokens_mask=True, return_length=True) for x in sentences]
+        special_tokens = [x["special_tokens_mask"] for x in tokenized]
+        lengths = [x["length"] for x in tokenized]
+        tokens = [x["input_ids"] for x in tokenized]
 
-    if len(new_dataset) == 10000: break
+        data.append({"sentences": sentences,
+                     "tokens": tokens,
+                     "special_tokens": special_tokens,
+                     "lengths": lengths})
 
-with open('Wikipedia/processed_10k.pkl', 'wb') as f:
-    pickle.dump(new_dataset, f)
+    return data
 
-print("Wrote 10k documents")
