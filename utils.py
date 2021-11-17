@@ -10,3 +10,5 @@ def _filter(x):
 def _clean(x):
     return x
 
+def _flatten(x):
+    return [item for sentence in x for item in sentence]
