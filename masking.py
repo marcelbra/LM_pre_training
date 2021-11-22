@@ -11,7 +11,7 @@ from nltk.tokenize import sent_tokenize
 import pickle
 from tqdm import tqdm
 import json
-from preprocess import get_data
+#from preprocess import get_data
 from dataclasses import dataclass, field
 import flax
 import jax

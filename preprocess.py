@@ -7,11 +7,7 @@ from datasets.arrow_dataset import Batch
 from utils import _filter, _clean, _flatten
 
 
-def get_data(n=10000):
-
-    wiki = load_from_disk("/home/marcelbraasch/PycharmProjects/LM_pre_training/Wikipedia/raw")["train"]
-    tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-    wiki = Dataset.from_dict(wiki[:n])  # Only for testing
+def process_data(wiki):
 
     data = []
 
@@ -40,10 +36,19 @@ def get_data(n=10000):
                      "tokens": tokens,
                      "special_tokens": special_tokens,
                      "token_lengths": lengths})
-        s = 0
 
     return data
 
+wiki = load_from_disk("/home/marcelbraasch/PycharmProjects/LM_pre_training/Wikipedia/raw")["train"]
+tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+#  # Only for testing
 
-#with open("Wikipedia/10kdata.pickle", "wb") as f:
-#    pickle.dump(get_data(), f)
+batches = 10
+
+for i in range(batches):
+    start = int((i / batches) * len(wiki))
+    end = int(((i+1) / batches) * len(wiki))
+    data = Dataset.from_dict(wiki[start:end])
+    data = process_data(data)
+    with open(f"Wikipedia/data_{i+1}.pickle", "wb") as f:
+        pickle.dump(data, f)
