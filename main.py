@@ -6,6 +6,7 @@ import numpy as np
 from transformers import BatchEncoding
 from datasets import load_dataset, load_from_disk#, save_to_disk
 from tokenizers import trainers, Tokenizer, normalizers, ByteLevelBPETokenizer
+from flax.training.common_utils import get_metrics, onehot, shard
 from transformers import (
     RobertaTokenizer,
     RobertaConfig,
@@ -39,6 +40,9 @@ from typing import Dict, List, Optional, Tuple
 import jax.numpy as jnp
 import optax
 from flax.training import train_state
+import torch
+
+TF_CPP_MIN_LOG_LEVEL = 0
 
 @flax.struct.dataclass
 class FlaxDataCollatorForLanguageModeling:
@@ -72,10 +76,14 @@ class FlaxDataCollatorForLanguageModeling:
 
     def __call__(self, examples: List[Dict[str, np.ndarray]], pad_to_multiple_of: int) -> Dict[str, np.ndarray]:
         # Handle dict or lists with proper padding and conversion to tensor.
-        batch = self.tokenizer.pad(examples, pad_to_multiple_of=pad_to_multiple_of, return_tensors=TensorType.NUMPY)
+        batch = self.tokenizer.pad(examples, pad_to_multiple_of=512, return_tensors=TensorType.NUMPY)
 
         # If special token mask has been preprocessed, pop it from the dict.
         special_tokens_mask = batch.pop("special", None)
+        stm = np.empty((n,512))
+        for i,item in enumerate(special_tokens_mask):
+            stm[i] = np.array(item + [1]*(512 - len(item)))
+        special_tokens_mask = stm
 
         batch["input_ids"], batch["labels"] = self.mask_tokens(
             batch["input_ids"], special_tokens_mask=special_tokens_mask
@@ -112,12 +120,14 @@ class FlaxDataCollatorForLanguageModeling:
         return inputs, labels
 
 # Constants
+device = "cuda:0"
 mlm_probability = 0.15
 seed = 42
 dtype = "float32"
 num_epochs = 10
-train_batch_size = 1000
-eval_batch_size = 1000
+n = 16
+train_batch_size = n
+eval_batch_size = n
 warmup_steps = 1000
 learning_rate = "5e-3"
 dataset_amount = 10000
@@ -146,9 +156,6 @@ warmup_fn = optax.linear_schedule(init_value=0.0, end_value=learning_rate, trans
 decay_fn = optax.linear_schedule(init_value=learning_rate, end_value=0, transition_steps=num_train_steps - warmup_steps)
 linear_decay_lr_schedule_fn = optax.join_schedules(schedules=[warmup_fn, decay_fn], boundaries=[warmup_steps])
 
-
-
-
 def decay_mask_fn(params):
     flat_params = traverse_util.flatten_dict(params)
     flat_mask = {path: (path[-1] != "bias" and path[-2:] != ("LayerNorm", "scale")) for path in flat_params}
@@ -168,7 +175,7 @@ state = train_state.TrainState.create(apply_fn=model.__call__, params=model.para
 
 # Define gradient update step fn
 def train_step(state, batch, dropout_rng):
-    dropout_rng, new_dropout_rng = jax.random.split(dropout_rng)
+    dropout_rng, new_dropout_rng = jax.random.split(dropout_rng[0])
 
     def loss_fn(params):
         labels = batch.pop("labels")
@@ -186,7 +193,7 @@ def train_step(state, batch, dropout_rng):
 
     grad_fn = jax.value_and_grad(loss_fn)
     loss, grad = grad_fn(state.params)
-    grad = jax.lax.pmean(grad, "batch")
+    #grad = jax.lax.pmean(grad, "batch")
     new_state = state.apply_gradients(grads=grad)
 
     metrics = jax.lax.pmean(
@@ -218,6 +225,7 @@ def eval_step(params, batch):
 data = None
 with open("Wikipedia/10kdata.pickle", "rb") as handle:
     data = pickle.load(handle)
+
 
 train_time = 0
 epochs = tqdm(range(num_epochs), desc=f"Epoch ... (1/{num_epochs})", position=0)
@@ -253,8 +261,6 @@ for epoch in epochs:
                 if len(batch) == batch_size:
                     yield batch, special
 
-
-
     # Create sampling rng
     rng, input_rng = jax.random.split(rng)
 
@@ -263,19 +269,19 @@ for epoch in epochs:
     train_samples_idx = jax.random.permutation(input_rng, jnp.arange(num_train_samples))
     train_batch_idx = generate_batch_splits(train_samples_idx, train_batch_size, data)
 
-    for step, (batch, special) in enumerate(tqdm(get_batch(batch_size=train_batch_size, data=data))):
+    for step, (batch, special) in enumerate(tqdm(get_batch(batch_size=train_batch_size, data=data), desc="Training...", position=1)):
         encoding = BatchEncoding({"input_ids": batch, "special": special})
         model_inputs = data_collator(encoding, pad_to_multiple_of=16)
-
-    # Gather the indexes for creating the batch and do a training step
-    for step, batch_idx in enumerate(tqdm(train_batch_idx, desc="Training...", position=1)):
-
-        samples = [tokenized_datasets["train"][int(idx)] for idx in batch_idx]
-        model_inputs = data_collator(samples, pad_to_multiple_of=16)
-
+        """
+        # Gather the indexes for creating the batch and do a training step
+        for step, batch_idx in enumerate(tqdm(train_batch_idx, desc="Training...", position=1)):
+    
+            samples = [tokenized_datasets["train"][int(idx)] for idx in batch_idx]
+            model_inputs = data_collator(samples, pad_to_multiple_of=16)
+        """
         # Model forward
-        model_inputs = shard(model_inputs.data)
-        state, train_metric, dropout_rngs = p_train_step(state, model_inputs, dropout_rngs)
+        #model_inputs = shard(model_inputs.data)
+        state, train_metric, dropout_rngs = train_step(state, model_inputs, dropout_rngs)
         train_metrics.append(train_metric)
 
         cur_step = epoch * (num_train_samples // train_batch_size) + step
